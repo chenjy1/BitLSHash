@@ -3,8 +3,12 @@
 import numpy as np
 import pickle
 
-from . import storage
+# from . import storage
 from . import dist_func
+import bitarray
+
+
+from .storage import storage
 
 
 class LSHash(object):
@@ -26,12 +30,15 @@ class LSHash(object):
     """
 
     def __init__(self, hash_size, input_dim, num_hashtables=1,
-                 storage_instance: storage.StorageBase = storage.InMemoryStorage('')):
+                 storage_config = None):
 
         self.hash_size = hash_size
         self.input_dim = input_dim
         self.num_hashtables = num_hashtables
-        self.storage_instance = storage_instance
+        if storage_config is None:
+            storage_config = 'dict'
+
+        self.storage_instance = storage(storage_config, table_num = num_hashtables)
 
         self.uniform_planes = None
 
@@ -84,19 +91,23 @@ class LSHash(object):
             basic types such as strings and integers.
         """
 
-        if isinstance(input_point, np.ndarray):
-            input_point = input_point.tolist()
+        # if isinstance(input_point, np.ndarray):
+        #     input_point = input_point.tolist()
 
-        value = (tuple(input_point), extra_data)
+        # value = (tuple(input_point), extra_data)
+
+        value = (input_point, extra_data)
 
         for i in range(self.num_hashtables):
-            self.storage_instance.append_val(
-                key=str(i) + "|" + self._hash(self.uniform_planes[i], input_point),
-                val=value)
+            self.storage_instance.append_val(self._hash(self.uniform_planes[i], input_point),
+                val = value, table_index = i)
+
+
+
 
     def query(self, query_point, num_results=None
               , dist_func=dist_func.euclidean_dist_square
-              , key_hamming=False):
+              ):
         """ Takes `query_point` which is either a tuple or a list of numbers,
         returns `num_results` of results as a list of tuples that are ranked
         based on the supplied metric function `distance_func`.
@@ -111,22 +122,21 @@ class LSHash(object):
             list in ranked order.
         """
 
-        candidates = set()
+        candidates = []
         query_point = np.array(query_point)
 
-        if key_hamming:
-            for i in range(self.num_hashtables):
-                query_hash = self._hash(self.uniform_planes[i], query_point)
-                for key in self.storage_instance.keys():
-                    key1, key2 = key.split('|')
-                    if key1 == str(i):
-                        if hamming_dist(key2, query_hash) < 2:
-                            candidates.update(self.storage_instance.get_list(key2))
 
-        if not key_hamming:
-            for i in range(self.num_hashtables):
-                query_hash = self._hash(self.uniform_planes[i], query_point)
-                candidates.update(self.storage_instance.get_list(str(i) + '|' + query_hash))
+        # if dist_func == dist_func.hamming_dist:
+        #     for i in range(self.num_hashtables):
+        #         query_hash = self._hash(self.uniform_planes[i], query_point)
+        #         for key in self.storage_instance.keys(i):
+        #             if hamming_dist(key, query_hash) < 2:
+        #                 candidates.update(self.storage_instance.get_list(key, i))
+
+        # else:
+        for i in range(self.num_hashtables):
+            query_hash = self._hash(self.uniform_planes[i], query_point)
+            candidates.extend(self.storage_instance.get_list(query_hash, i))
 
 
         # rank candidates by distance function
@@ -137,5 +147,5 @@ class LSHash(object):
         return candidates[:num_results] if num_results else candidates
 
 
-def hamming_dist(key1, key2):
-    return bin(int(key1, base=2) ^ int(key2, base=2))[2:].count('1')
+# def hamming_dist(key1, key2):
+#     return bin(int(key1, base=2) ^ int(key2, base=2))[2:].count('1')
